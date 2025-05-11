@@ -1,17 +1,22 @@
-// Firebase Configuration
+// Import Firebase SDK modules
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.7.1/firebase-app.js';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signOut } from 'https://www.gstatic.com/firebasejs/11.7.1/firebase-auth.js';
+import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/11.7.1/firebase-firestore.js';
+
+// Firebase configuration
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBThdfIIitX5gQw0akn9l720dbfu1XYZns",
+  authDomain: "nammleproject.firebaseapp.com",
+  projectId: "nammleproject",
+  storageBucket: "nammleproject.firebasestorage.app",
+  messagingSenderId: "514026192645",
+  appId: "1:514026192645:web:a11d3f1ed06423bef5416c"
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
 // Store Implementation
 class Store {
@@ -43,7 +48,7 @@ const store = new Store();
 const AuthService = {
   async signIn(email, password) {
     try {
-      const userCredential = await auth.signInWithEmailAndPassword(email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
       store.setState({ user: userCredential.user });
       return { success: true };
     } catch (error) {
@@ -53,8 +58,8 @@ const AuthService = {
 
   async signUp(email, password, name) {
     try {
-      const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-      await userCredential.user.updateProfile({ displayName: name });
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      await updateProfile(userCredential.user, { displayName: name });
       store.setState({ user: userCredential.user });
       return { success: true };
     } catch (error) {
@@ -64,7 +69,7 @@ const AuthService = {
 
   async signOut() {
     try {
-      await auth.signOut();
+      await signOut(auth);
       store.setState({ user: null });
       return { success: true };
     } catch (error) {
@@ -77,9 +82,9 @@ const AuthService = {
 const EventService = {
   async registerEvent(eventData) {
     try {
-      const docRef = await db.collection('events').add({
+      const docRef = await addDoc(collection(db, 'events'), {
         ...eventData,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdAt: serverTimestamp(),
         userId: store.state.user.uid
       });
       return { success: true, id: docRef.id };
@@ -90,7 +95,7 @@ const EventService = {
 
   async getEvents() {
     try {
-      const snapshot = await db.collection('events').get();
+      const snapshot = await getDocs(collection(db, 'events'));
       const events = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       store.setState({ events });
       return { success: true, events };
@@ -105,7 +110,8 @@ const Router = {
   routes: {
     '/': signInView,
     '/signup': signUpView,
-    '/register': registerView
+    '/register': registerView,
+    '/home': homeView
   },
 
   init() {
@@ -121,13 +127,26 @@ const Router = {
   loadRoute() {
     const path = window.location.pathname;
     const route = this.routes[path] || this.routes['/'];
-    
+  
     document.getElementById('app').innerHTML = route();
     document.body.className = path.slice(1) || 'signin';
-    
-    if (path === '/signup') initSignUp();
-    else if (path === '/register') initEventRegistration();
-    else initSignIn();
+  
+    // Safely delay execution to ensure elements are in DOM
+    requestAnimationFrame(() => {
+      switch (path) {
+        case '/signup':
+          initSignUp();
+          break;
+        case '/register':
+          initEventRegistration();
+          break;
+        case '/home':
+          initHome();  // runs after DOM is ready
+          break;
+        default:
+          initSignIn();
+      }
+    });
   }
 };
 
@@ -222,6 +241,26 @@ function registerView() {
   `;
 }
 
+function homeView() {
+  return `
+    <div class="card">
+      <div class="card-header">
+        <h1>EventElegance</h1>
+      </div>
+      <div class="card-body">
+        <p style="text-align: center; font-size: 1rem; color: var(--text-dark); margin-bottom: 1rem;">
+          Welcome to <strong>EventElegance</strong>, your modern and intuitive platform for creating and managing elegant events effortlessly.
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <button class="btn" id="start-now-btn">Start Now</button>
+          <button class="btn" id="view-events-btn" style="background: var(--secondary); color: white;">View My Events</button>
+          <button class="btn" id="logout-btn" style="background: var(--dark); color: white;">Logout</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // Handlers
 function initSignIn() {
   const form = document.getElementById('signin-form');
@@ -278,26 +317,41 @@ function initSignUp() {
 
 function initEventRegistration() {
   const form = document.getElementById('event-form');
-  const errorElement = document.getElementById('event-error');
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    const eventData = {
-      name: document.getElementById('event-name').value,
-      date: document.getElementById('event-date').value,
-      location: document.getElementById('event-location').value,
-      description: document.getElementById('event-description').value
-    };
 
-    const result = await EventService.registerEvent(eventData);
-    
-    if (result.success) {
-      alert('Event created successfully!');
-      form.reset();
-    } else {
-      errorElement.textContent = result.error;
+    // Get form values
+    const title = document.getElementById('title').value;
+    const date = document.getElementById('date').value;
+
+    try {
+      // Save to Firestore (replace with your Firestore logic)
+      await addDoc(collection(db, 'events'), {
+        title,
+        date,
+        createdAt: new Date()
+      });
+
+      // ✅ Navigate to home page after successful creation
+      Router.navigateTo('/home');
+
+    } catch (error) {
+      console.error("Error creating event:", error);
+      alert("Failed to create event.");
     }
+  });
+}
+
+function initHome() {
+  const btn = document.getElementById('start-now-btn');
+  if (!btn) {
+    console.warn("start-now-btn not found. Retrying...");
+    return setTimeout(initHome, 50); // Retry after short delay
+  }
+
+  btn.addEventListener('click', () => {
+    Router.navigateTo('/register');
   });
 }
 
